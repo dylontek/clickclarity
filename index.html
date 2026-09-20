@@ -130,6 +130,8 @@
   .bar-rate.match { color: var(--match); }
   .bar-rate.mismatch { color: var(--mismatch); }
   .bar-rate.accent { color: var(--accent); }
+  .bar-rate.warn { color: var(--mismatch); font-weight: 500; }
+  .row-warning { font-size: 12px; color: var(--mismatch); margin: 4px 0 0; }
   .bar-track { height: 8px; border-radius: 3px; background: var(--paper-dark); }
   .bar-fill { height: 8px; border-radius: 3px; }
   .bar-fill.match { background: var(--match); }
@@ -150,7 +152,7 @@
   </div>
 
   <div id="panel-keyword" class="panel">
-    <p class="help-text">A "search word" is what someone typed before they found your shop. Etsy: go to Shop Manager &gt; Stats &gt; Traffic sources &gt; keywords. Gumroad: go to Analytics &gt; referrers. Other websites: look for a button called "Analytics" or "Traffic."</p>
+    <p class="help-text">A "search word" is what someone typed before they found your shop. Look in your shop or store dashboard for a section called "Stats," "Analytics," or "Traffic sources" — most selling platforms keep this data under one of those names.</p>
     <p class="help-text">For each word, ask yourself: "Would someone who typed this really want to buy my exact product?" <b style="color:var(--match)">Match</b> = yes. <b style="color:var(--mismatch)">Mismatch</b> = no, wrong people. <b style="color:var(--unclear)">Unclear</b> = not sure.</p>
 
     <div id="kw-rows"></div>
@@ -167,7 +169,7 @@
   </div>
 
   <div id="panel-source" class="panel" style="display:none">
-    <p class="help-text">Type how many people looked (views) and how many people bought (orders), for each place people find you. Find this in Etsy Stats &gt; Traffic sources, or Gumroad Analytics.</p>
+    <p class="help-text">Type how many people looked (views) and how many people bought (orders), for each place people find you. You'll find this in your shop's Stats or Analytics dashboard, usually under a section called "Traffic sources."</p>
 
     <div id="src-rows"></div>
 
@@ -197,7 +199,7 @@
   function emptyKeywordRow() { return { id: uid(), term: '', signal: '', note: '' }; }
   function emptySourceRow(name) { return { id: uid(), name: name || '', views: '', orders: '' }; }
   function defaultSourceRows() {
-    return [emptySourceRow('Etsy search'), emptySourceRow('Etsy ads'), emptySourceRow('Social / Pinterest')];
+    return [emptySourceRow(), emptySourceRow(), emptySourceRow()];
   }
   function defaultKeywordRows() {
     return [emptyKeywordRow(), emptyKeywordRow(), emptyKeywordRow(), emptyKeywordRow(), emptyKeywordRow()];
@@ -390,17 +392,33 @@
       .map(function (s) {
         var views = parseFloat(s.views) || 0;
         var orders = parseFloat(s.orders) || 0;
-        return { id: s.id, name: s.name, views: views, orders: orders, rate: (orders / views) * 100, low: views < 20 };
+        return { id: s.id, name: s.name, views: views, orders: orders, rate: (orders / views) * 100, low: views < 20, invalid: orders > views };
       })
-      .sort(function (a, b) { return b.rate - a.rate; });
+      .sort(function (a, b) {
+        if (a.invalid !== b.invalid) return a.invalid ? 1 : -1;
+        return b.rate - a.rate;
+      });
 
     var wrap = document.getElementById('src-results');
     if (!computed.length) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
     wrap.style.display = 'block';
-    var maxRate = Math.max.apply(null, computed.map(function (c) { return c.rate; }).concat([0.01]));
+    var valid = computed.filter(function (c) { return !c.invalid; });
+    var maxRate = Math.max.apply(null, valid.map(function (c) { return c.rate; }).concat([0.01]));
 
-    var barsHtml = computed.map(function (c, i) {
-      var cls = i === 0 ? 'match' : (i === computed.length - 1 && computed.length > 1 ? 'mismatch' : 'accent');
+    var barsHtml = computed.map(function (c) {
+      if (c.invalid) {
+        return (
+          '<div class="bar-row">' +
+            '<div class="bar-label">' +
+              '<span class="bar-name">' + escapeHtml(c.name) + '</span>' +
+              '<span class="bar-rate warn">Check this row</span>' +
+            '</div>' +
+            '<p class="row-warning">Orders (' + c.orders + ') can\'t be more than views (' + c.views + '). Fix the numbers above.</p>' +
+          '</div>'
+        );
+      }
+      var i = valid.indexOf(c);
+      var cls = i === 0 ? 'match' : (i === valid.length - 1 && valid.length > 1 ? 'mismatch' : 'accent');
       return (
         '<div class="bar-row">' +
           '<div class="bar-label">' +
@@ -413,14 +431,14 @@
     }).join('');
 
     var insight = '';
-    if (computed.length >= 2) {
-      var best = computed[0], worst = computed[computed.length - 1];
+    if (valid.length >= 2) {
+      var best = valid[0], worst = valid[valid.length - 1];
       if (best.rate > 0 && best.rate !== worst.rate) {
         var multiple = worst.rate > 0 ? (best.rate / worst.rate).toFixed(1) + '\u00d7' : 'far';
         insight = '<p class="insight-text">' + escapeHtml(best.name) + ' is working ' + multiple + ' better than ' + escapeHtml(worst.name) + '. Try spending more time on what is already working.</p>';
       }
     }
-    var lowNote = computed.some(function (c) { return c.low; })
+    var lowNote = valid.some(function (c) { return c.low; })
       ? '<p class="low-note">Places marked "not enough data yet" had fewer than 20 people look. Wait for more visitors before you trust that number.</p>'
       : '';
 
